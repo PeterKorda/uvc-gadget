@@ -39,6 +39,10 @@ struct uvc_device
 	unsigned int fcc;
 	unsigned int width;
 	unsigned int height;
+
+	/* Camera controls */
+	int brightness;
+	int gain;
 };
 
 static const char *uvc_request_names[] = {
@@ -101,6 +105,10 @@ struct uvc_device *uvc_open(const char *devname, struct uvc_stream *stream)
 
 	memset(dev, 0, sizeof *dev);
 	dev->stream = stream;
+
+	/* Initialize controls with default values */
+	dev->brightness = 128;
+	dev->gain = 0;
 
 	dev->vdev = v4l2_open(devname);
 	if (dev->vdev == NULL) {
@@ -195,14 +203,181 @@ uvc_events_process_control(struct uvc_device *dev, uint8_t req, uint8_t cs, uint
 			   struct uvc_request_data *resp)
 {
 	printf("control request (req %s cs %s)\n", uvc_request_name(req), pu_control_name(cs));
-	(void)dev;
 
-	/*
-	 * Responding to controls is not currently implemented. As an interim
-	 * measure respond to say that both get and set operations are permitted.
-	 */
-	resp->data[0] = 0x03;
-	resp->length = len;
+	switch (req) {
+	case UVC_SET_CUR:
+		printf("set control %s (len=%d)\n", pu_control_name(cs), len);
+		switch (cs) {
+		case UVC_PU_BRIGHTNESS_CONTROL:
+			if (len >= 1) {
+				dev->brightness = resp->data[0];
+				printf("  brightness set to %d\n", dev->brightness);
+			}
+			break;
+
+		case UVC_PU_GAIN_CONTROL:
+			if (len >= 2) {
+				/* Gain is typically 16-bit little-endian */
+				dev->gain = resp->data[0] | (resp->data[1] << 8);
+				printf("  gain set to %d\n", dev->gain);
+			}
+			break;
+
+		default:
+			printf("  unsupported control\n");
+			break;
+		}
+		resp->length = 0;
+		break;
+
+	case UVC_GET_CUR:
+		printf("get control %s (len=%d)\n", pu_control_name(cs), len);
+		switch (cs) {
+		case UVC_PU_BRIGHTNESS_CONTROL:
+			if (len >= 1) {
+				resp->data[0] = dev->brightness;
+				resp->length = 1;
+				printf("  brightness: %d\n", dev->brightness);
+			}
+			break;
+
+		case UVC_PU_GAIN_CONTROL:
+			if (len >= 2) {
+				/* Gain is typically 16-bit little-endian */
+				resp->data[0] = dev->gain & 0xff;
+				resp->data[1] = (dev->gain >> 8) & 0xff;
+				resp->length = 2;
+				printf("  gain: %d\n", dev->gain);
+			}
+			break;
+
+		default:
+			printf("  unsupported control\n");
+			resp->length = 0;
+			break;
+		}
+		break;
+
+	case UVC_GET_MIN:
+		printf("get min %s (len=%d)\n", pu_control_name(cs), len);
+		switch (cs) {
+		case UVC_PU_BRIGHTNESS_CONTROL:
+			resp->data[0] = 0;
+			resp->length = 1;
+			break;
+
+		case UVC_PU_GAIN_CONTROL:
+			resp->data[0] = 0;
+			resp->data[1] = 0;
+			resp->length = 2;
+			break;
+
+		default:
+			resp->length = 0;
+			break;
+		}
+		break;
+
+	case UVC_GET_MAX:
+		printf("get max %s (len=%d)\n", pu_control_name(cs), len);
+		switch (cs) {
+		case UVC_PU_BRIGHTNESS_CONTROL:
+			resp->data[0] = 255;
+			resp->length = 1;
+			break;
+
+		case UVC_PU_GAIN_CONTROL:
+			resp->data[0] = 0xff;
+			resp->data[1] = 0x0f; /* 4095 in 16-bit */
+			resp->length = 2;
+			break;
+
+		default:
+			resp->length = 0;
+			break;
+		}
+		break;
+
+	case UVC_GET_DEF:
+		printf("get default %s (len=%d)\n", pu_control_name(cs), len);
+		switch (cs) {
+		case UVC_PU_BRIGHTNESS_CONTROL:
+			resp->data[0] = 128;
+			resp->length = 1;
+			break;
+
+		case UVC_PU_GAIN_CONTROL:
+			resp->data[0] = 0;
+			resp->data[1] = 0;
+			resp->length = 2;
+			break;
+
+		default:
+			resp->length = 0;
+			break;
+		}
+		break;
+
+	case UVC_GET_RES:
+		printf("get resolution %s (len=%d)\n", pu_control_name(cs), len);
+		switch (cs) {
+		case UVC_PU_BRIGHTNESS_CONTROL:
+			resp->data[0] = 1;
+			resp->length = 1;
+			break;
+
+		case UVC_PU_GAIN_CONTROL:
+			resp->data[0] = 1;
+			resp->data[1] = 0;
+			resp->length = 2;
+			break;
+
+		default:
+			resp->length = 0;
+			break;
+		}
+		break;
+
+	case UVC_GET_INFO:
+		printf("get info %s (len=%d)\n", pu_control_name(cs), len);
+		/*
+		 * Bit 0: GET is supported
+		 * Bit 1: SET is supported
+		 * Bit 2: Disabled in firmware
+		 * Bit 3: Autoupdate is supported
+		 * Bit 4: Asynchronous is supported
+		 * Bit 5: Autoupdate is enabled
+		 */
+		resp->data[0] = 0x03; /* GET and SET supported */
+		resp->length = 1;
+		break;
+
+	case UVC_GET_LEN:
+		printf("get length %s (len=%d)\n", pu_control_name(cs), len);
+		switch (cs) {
+		case UVC_PU_BRIGHTNESS_CONTROL:
+			resp->data[0] = 1;
+			resp->data[1] = 0;
+			resp->length = 2;
+			break;
+
+		case UVC_PU_GAIN_CONTROL:
+			resp->data[0] = 2;
+			resp->data[1] = 0;
+			resp->length = 2;
+			break;
+
+		default:
+			resp->length = 0;
+			break;
+		}
+		break;
+
+	default:
+		printf("unknown control request %d\n", req);
+		resp->length = 0;
+		break;
+	}
 }
 
 static void
@@ -446,4 +621,18 @@ struct v4l2_device *uvc_v4l2_device(struct uvc_device *dev)
 	 * with an abstract video sink class when one will be avaiilable.
 	 */
 	return dev->vdev;
+}
+
+int uvc_get_brightness(struct uvc_device *dev)
+{
+	if (dev == NULL)
+		return 128;
+	return dev->brightness;
+}
+
+int uvc_get_gain(struct uvc_device *dev)
+{
+	if (dev == NULL)
+		return 0;
+	return dev->gain;
 }

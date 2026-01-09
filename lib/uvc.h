@@ -23,4 +23,8 @@ void uvc_set_config(struct uvc_device *dev, struct uvc_function_config *fc);
 int uvc_set_format(struct uvc_device *dev, struct v4l2_pix_format *format);
 struct v4l2_device *uvc_v4l2_device(struct uvc_device *dev);
 
+/* Camera control accessors */
+int uvc_get_brightness(struct uvc_device *dev);
+int uvc_get_gain(struct uvc_device *dev);
+
 #endif /* __UVC_H__ */
